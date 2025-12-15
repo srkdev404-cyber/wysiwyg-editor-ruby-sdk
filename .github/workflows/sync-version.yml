@@ -57,8 +57,8 @@ jobs:
       - name: Commit and push changes
         if: env.RUN == 'true'
         run: |
-          git config user.name "CI Bot"
-          git config user.email "ci@github.com"
+          git config user.name "srkdev404-cyber"
+          git config user.email "srkdev404@gmail.com"
           git add .
           git commit -m "chore(${ENVIRONMENT}): sync v${VERSION}"
           git push origin "$BRANCH"
