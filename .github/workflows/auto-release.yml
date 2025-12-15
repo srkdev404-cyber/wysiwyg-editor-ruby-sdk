@@ -1,0 +1,69 @@
+name: Auto Release (Ruby SDK)
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    environment: PAT
+
+    steps:
+      - name: Validate release intent
+        id: check
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            const sha = context.payload.pull_request.merge_commit_sha;
+            const commit = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha
+            });
+            const isRelease = /release:\s*yes/i.test(commit.data.commit.message);
+            core.setOutput("release", isRelease ? "true" : "false");
+
+      - name: Stop if not a release
+        if: steps.check.outputs.release == 'false'
+        run: exit 0
+
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT }}
+
+      - name: Read version
+        run: |
+          VERSION=$(grep -Eo "[0-9]+\.[0-9]\+\.[0-9]\+" lib/froala-editor-sdk/version.rb)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.1"
+
+      - name: Build gem (no publish)
+        run: gem build wysiwyg-editor-ruby-sdk.gemspec
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        with:
+          tag_name: "v${{ env.VERSION }}"
+          release_name: "Release v${{ env.VERSION }}"
+          body: |
+            ✔ Environment: testing / prod
+            ✔ Version synced
+            ✔ Dependency updated
+            ✔ Gem built
+            ✖ Gem not published
