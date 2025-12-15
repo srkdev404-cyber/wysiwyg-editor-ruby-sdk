@@ -1,4 +1,4 @@
-name: Sync Version (Ruby SDK)
+name: Sync Version – Ruby SDK
 
 on:
   repository_dispatch:
@@ -11,65 +11,35 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    environment: PAT
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (FIXED)
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Load dispatch payload
+      - name: Load version
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
-          echo "ENVIRONMENT=${{ github.event.client_payload.env || 'testing' }}" >> $GITHUB_ENV
 
-      - name: Read current version
+      - name: Create branch
         run: |
-          CURRENT=$(grep -Eo "[0-9]+\.[0-9]+\.[0-9]+" lib/froala-editor-sdk/version.rb)
-          echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
-
-      - name: Decide whether to run
-        run: |
-          if [ "$VERSION" = "$CURRENT_VERSION" ]; then
-            echo "RUN=false" >> $GITHUB_ENV
-          else
-            echo "RUN=true" >> $GITHUB_ENV
-          fi
-
-      - name: Create update branch
-        if: env.RUN == 'true'
-        run: |
-          BRANCH="sync/${ENVIRONMENT}/v${VERSION}"
+          BRANCH="sync-v${VERSION}"
           git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
       - name: Update version.rb
-        if: env.RUN == 'true'
         run: |
           sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+/$VERSION/" lib/froala-editor-sdk/version.rb
 
-      - name: Update gem dependency version
-        if: env.RUN == 'true'
+      - name: Update gemspec dependency
         run: |
           sed -i "s/add_dependency .*\"[0-9]\+\.[0-9]\+\.[0-9]\+\"/add_dependency \"froala-editor-sdk\", \"$VERSION\"/" wysiwyg-editor-ruby-sdk.gemspec
 
-      - name: Commit and push changes
-        if: env.RUN == 'true'
+      - name: Commit and push
         run: |
-          git config user.name "srkdev404-cyber"
-          git config user.email "srkdev404@gmail.com"
+          git config user.name "CI Bot"
+          git config user.email "ci@github.com"
           git add .
-          git commit -m "chore(${ENVIRONMENT}): sync v${VERSION}"
+          git commit -m "chore: sync v${VERSION}"
           git push origin "$BRANCH"
-
-      - name: Create Pull Request
-        if: env.RUN == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.PAT }}
-        run: |
-          gh pr create \
-            --base master \
-            --head "$BRANCH" \
-            --title "[${ENVIRONMENT}] Sync Ruby SDK v${VERSION}" \
-            --body "Automated version + dependency sync for **${ENVIRONMENT}**"
