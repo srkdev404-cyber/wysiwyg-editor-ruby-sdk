@@ -17,8 +17,9 @@ jobs:
     environment: PAT
 
     steps:
+
       - name: Validate release intent
-        id: check
+        id: validate
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.PAT }}
@@ -29,11 +30,12 @@ jobs:
               repo: context.repo.repo,
               ref: sha
             });
+
             const isRelease = /release:\s*yes/i.test(commit.data.commit.message);
             core.setOutput("release", isRelease ? "true" : "false");
 
       - name: Stop if not a release
-        if: steps.check.outputs.release == 'false'
+        if: steps.validate.outputs.release == 'false'
         run: exit 0
 
       - name: Checkout master
@@ -41,35 +43,48 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
 
-      # FIXED VERSION EXTRACTION
-      - name: Read gem version
-        id: ver
+      - name: Read version.rb values
+        id: read_version
         run: |
-          VERSION=$(grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' lib/froala-editor-sdk/version.rb || true)
-          if [ -z "$VERSION" ]; then
-            echo "Version could not be extracted"
-            exit 1
-          fi
+          FILE="lib/froala-editor-sdk/version.rb"
+
+          MAJOR=$(grep -Eo 'Major\s*=\s*[0-9]+' $FILE | grep -Eo '[0-9]+')
+          MINOR=$(grep -Eo 'Minor\s*=\s*[0-9]+' $FILE | grep -Eo '[0-9]+')
+          TINY=$(grep -Eo 'Tiny\s*=\s*[0-9]+'  $FILE | grep -Eo '[0-9]+')
+
+          VERSION="${MAJOR}.${MINOR}.${TINY}"
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Extracted version: $VERSION"
+          echo "Extracted Ruby version: $VERSION"
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.1"
 
-      - name: Build gem (not publishing)
+      - name: Build gem
         run: gem build wysiwyg-editor-ruby-sdk.gemspec
 
-      # FIXED RELEASE CREATION
+      - name: Push gem to RubyGems
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          echo ":rubygems_api_key: $RUBYGEMS_API_KEY" > ~/.gem/credentials
+          chmod 600 ~/.gem/credentials
+
+          GEMFILE=$(ls *.gem | head -n 1)
+
+          echo "Pushing $GEMFILE to RubyGems..."
+          gem push "$GEMFILE"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         with:
           tag_name: "v${{ env.VERSION }}"
-          name: "Release v${{ env.VERSION }}"
+          name: "Ruby SDK Release v${{ env.VERSION }}"
           body: |
             ✔ Version synced
-            ✔ Ruby gem built (local)
-            ✖ Gem NOT published to RubyGems
+            ✔ Ruby SDK built  
+            ✔ Gem pushed to RubyGems.org  
