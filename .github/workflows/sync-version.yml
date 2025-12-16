@@ -57,8 +57,8 @@ jobs:
       - name: Create sync branch
         run: |
           git checkout -B sync-${{ env.VERSION }}
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config user.name "srkdev404-cyber"
+          git config user.email "srkdev404@gmail.com"
           git add .
           git commit -m "chore: sync Ruby SDK version to v${{ env.VERSION }}" || echo "No changes"
 
