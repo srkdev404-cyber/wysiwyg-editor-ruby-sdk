@@ -41,29 +41,35 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Read version
+      # FIXED VERSION EXTRACTION
+      - name: Read gem version
+        id: ver
         run: |
-          VERSION=$(grep -Eo "[0-9]+\.[0-9]\+\.[0-9]\+" lib/froala-editor-sdk/version.rb)
+          VERSION=$(grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' lib/froala-editor-sdk/version.rb || true)
+          if [ -z "$VERSION" ]; then
+            echo "Version could not be extracted"
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Extracted version: $VERSION"
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.1"
 
-      - name: Build gem (no publish)
+      - name: Build gem (not publishing)
         run: gem build wysiwyg-editor-ruby-sdk.gemspec
 
+      # FIXED RELEASE CREATION
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
         with:
           tag_name: "v${{ env.VERSION }}"
-          release_name: "Release v${{ env.VERSION }}"
+          name: "Release v${{ env.VERSION }}"
           body: |
-            ✔ Environment: testing / prod
             ✔ Version synced
-            ✔ Dependency updated
-            ✔ Gem built
-            ✖ Gem not published
+            ✔ Ruby gem built (local)
+            ✖ Gem NOT published to RubyGems
