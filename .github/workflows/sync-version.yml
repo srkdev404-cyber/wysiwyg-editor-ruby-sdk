@@ -1,8 +1,8 @@
-name: Sync Version – Ruby SDK
+name: Sync Version From Main Repo (Ruby SDK)
 
 on:
   repository_dispatch:
-    types: [sync-version]
+    types: [version_update]
 
 permissions:
   contents: write
@@ -13,33 +13,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository (FIXED)
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
-      - name: Load version
+      - name: Read version from dispatch event
+        id: ver
         run: |
-          echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
+          VERSION="${{ github.event.client_payload.version }}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Incoming version: $VERSION"
 
-      - name: Create branch
+      # Update Ruby gem version file
+      - name: Update version in Ruby SDK
         run: |
-          BRANCH="sync-v${VERSION}"
-          git checkout -b "$BRANCH"
-          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          FILE="lib/froala-editor-sdk/version.rb"
+          if [ ! -f "$FILE" ]; then
+            echo "Version file not found: $FILE"
+            exit 1
+          fi
+          sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+/${{ env.VERSION }}/g" $FILE
+          echo "Updated Ruby SDK version to ${{ env.VERSION }}"
 
-      - name: Update version.rb
+      - name: Create sync branch
         run: |
-          sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+/$VERSION/" lib/froala-editor-sdk/version.rb
-
-      - name: Update gemspec dependency
-        run: |
-          sed -i "s/add_dependency .*\"[0-9]\+\.[0-9]\+\.[0-9]\+\"/add_dependency \"froala-editor-sdk\", \"$VERSION\"/" wysiwyg-editor-ruby-sdk.gemspec
-
-      - name: Commit and push
-        run: |
-          git config user.name "srkdev404-cyber"
-          git config user.email "srkdev404@gmail.com"
+          git checkout -B sync-${{ env.VERSION }}
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
           git add .
-          git commit -m "chore: sync v${VERSION}"
-          git push origin "$BRANCH"
+          git commit -m "chore: sync version v${{ env.VERSION }}" || echo "No changes"
+
+      # FIX FOR YOUR ERROR → FORCE PUSH
+      - name: Push sync branch
+        run: |
+          git push origin sync-${{ env.VERSION }} --force
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: sync-${{ env.VERSION }}
+          base: master
+          title: "Version Sync: v${{ env.VERSION }}"
+          body: |
+            This PR updates the Ruby SDK version to **v${{ env.VERSION }}**.
+            Merge after validation.
+          token: ${{ secrets.PAT }}
