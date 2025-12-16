@@ -13,7 +13,6 @@ gem "froala-editor-sdk"
 
 and run `bundle install`.
 
-
 ## Quick start - Image Upload
 
 1. Define upload route in `routes.rb` file.
