@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
@@ -22,19 +23,36 @@ jobs:
         id: ver
         run: |
           VERSION="${{ github.event.client_payload.version }}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Incoming version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      # Update Ruby gem version file
-      - name: Update version in Ruby SDK
+      - name: Update Ruby version.rb (Major/Minor/Tiny)
         run: |
           FILE="lib/froala-editor-sdk/version.rb"
           if [ ! -f "$FILE" ]; then
-            echo "Version file not found: $FILE"
+            echo "ERROR: Version file not found!"
             exit 1
           fi
-          sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+/${{ env.VERSION }}/g" $FILE
-          echo "Updated Ruby SDK version to ${{ env.VERSION }}"
+
+          IFS='.' read -r MAJOR MINOR TINY <<< "${{ env.VERSION }}"
+
+          sed -i "s/Major = .*/Major = ${MAJOR}/" $FILE
+          sed -i "s/Minor = .*/Minor = ${MINOR}/" $FILE
+          sed -i "s/Tiny = .*/Tiny = ${TINY}/"   $FILE
+
+          echo "Updated Ruby version.rb to ${{ env.VERSION }}"
+
+      - name: Update gemspec dependency version
+        run: |
+          GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
+          if [ ! -f "$GEMSPEC" ]; then
+            echo "ERROR: Gem specification file not found!"
+            exit 1
+          fi
+
+          sed -i "s/gem.add_dependency 'froala-editor-sdk'.*/gem.add_dependency 'froala-editor-sdk', '${{ env.VERSION }}'/" $GEMSPEC
+
+          echo "Updated gemspec dependency version to ${{ env.VERSION }}"
 
       - name: Create sync branch
         run: |
@@ -42,20 +60,21 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add .
-          git commit -m "chore: sync version v${{ env.VERSION }}" || echo "No changes"
+          git commit -m "chore: sync Ruby SDK version to v${{ env.VERSION }}" || echo "No changes"
 
-      # FIX FOR YOUR ERROR → FORCE PUSH
-      - name: Push sync branch
+      - name: Push sync branch (force overwrite)
         run: |
           git push origin sync-${{ env.VERSION }} --force
 
       - name: Create PR
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.PAT }}
           branch: sync-${{ env.VERSION }}
           base: master
           title: "Version Sync: v${{ env.VERSION }}"
           body: |
-            This PR updates the Ruby SDK version to **v${{ env.VERSION }}**.
+            This PR updates:
+            - Ruby SDK version.rb → **v${{ env.VERSION }}**
+            - gemspec dependency → **v${{ env.VERSION }}**
             Merge after validation.
-          token: ${{ secrets.PAT }}
