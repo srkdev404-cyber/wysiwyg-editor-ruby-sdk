@@ -47,21 +47,17 @@ jobs:
           token: ${{ secrets.PAT }}
 
       # ----------------------------------------
-      # Read version safely (Ruby-based)
+      # Read version.rb (Ruby-evaluated)
       # ----------------------------------------
-      - name: Read version
+      - name: Read version from Ruby constants
         run: |
           VERSION=$(ruby -e "
-            content = File.read('lib/froala-editor-sdk/version.rb')
-            if content =~ /VERSION\s*=\s*['\"]([^'\"]+)['\"]/
-              puts \$1
-            else
-              exit 1
-            end
+            require './lib/froala-editor-sdk/version'
+            puts FroalaEditorSDK::Version::String
           ")
 
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Version: $VERSION"
+          echo \"VERSION=$VERSION\" >> $GITHUB_ENV
+          echo \"Detected version: $VERSION\"
 
       # ----------------------------------------
       # Setup Ruby
@@ -78,7 +74,7 @@ jobs:
         run: gem build wysiwyg-editor-ruby-sdk.gemspec
 
       # ----------------------------------------
-      # Create GitHub Release & attach gem
+      # Create GitHub Release (NO manual tagging)
       # ----------------------------------------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
