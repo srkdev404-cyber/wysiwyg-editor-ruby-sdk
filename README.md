@@ -20,7 +20,6 @@ and run `bundle install`.
    ```ruby
    post '/upload_image' => 'upload#upload_image', :as => :upload_image
    ```
-
 2. Tell editor to upload to the specified route in your JS.
 
    ```javascript
