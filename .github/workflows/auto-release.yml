@@ -1,9 +1,10 @@
-name: Auto Release (Ruby SDK)
+name: Auto Release – Ruby SDK
 
 on:
   pull_request:
     types: [closed]
-    branches: [master]
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -13,50 +14,78 @@ jobs:
   release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    environment: PAT
 
     steps:
-      - name: Validate release intent
+      # ----------------------------------------
+      # Require "release: yes"
+      # ----------------------------------------
+      - name: Check release intent
         id: check
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.PAT }}
           script: |
-            const msg = context.payload.pull_request.title + " " +
-                        context.payload.pull_request.body;
-            core.setOutput("release", /release:\s*yes/i.test(msg) ? "true" : "false");
+            const text =
+              (context.payload.pull_request.title || '') + ' ' +
+              (context.payload.pull_request.body || '');
+            core.setOutput(
+              'release',
+              /release:\s*yes/i.test(text) ? 'true' : 'false'
+            );
 
-      - if: steps.check.outputs.release == 'false'
+      - name: Stop if not release
+        if: steps.check.outputs.release == 'false'
         run: exit 0
 
-      - uses: actions/checkout@v4
+      # ----------------------------------------
+      # Checkout merged code
+      # ----------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
-      - run: |
-          FILE="lib/froala-editor-sdk/version.rb"
-          MAJOR=$(grep -Eo 'Major\s*=\s*[0-9]+' $FILE | grep -Eo '[0-9]+')
-          MINOR=$(grep -Eo 'Minor\s*=\s*[0-9]+' $FILE | grep -Eo '[0-9]+')
-          TINY=$(grep -Eo 'Tiny\s*=\s*[0-9]+'  $FILE | grep -Eo '[0-9]+')
-          VERSION="${MAJOR}.${MINOR}.${TINY}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      # ----------------------------------------
+      # Read version safely (Ruby-based)
+      # ----------------------------------------
+      - name: Read version
+        run: |
+          VERSION=$(ruby -e "
+            content = File.read('lib/froala-editor-sdk/version.rb')
+            if content =~ /VERSION\s*=\s*['\"]([^'\"]+)['\"]/
+              puts \$1
+            else
+              exit 1
+            end
+          ")
 
-      - uses: ruby/setup-ruby@v1
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+
+      # ----------------------------------------
+      # Setup Ruby
+      # ----------------------------------------
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1'
 
-      - run: gem build wysiwyg-editor-ruby-sdk.gemspec
+      # ----------------------------------------
+      # Build gem ONLY (no push)
+      # ----------------------------------------
+      - name: Build gem
+        run: gem build wysiwyg-editor-ruby-sdk.gemspec
 
-      - env:
-          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
-        run: |
-          echo ":rubygems_api_key: $RUBYGEMS_API_KEY" > ~/.gem/credentials
-          chmod 600 ~/.gem/credentials
-          gemFile=$(ls *.gem | head -n 1)
-          gem push "$gemFile"
-
-      - uses: softprops/action-gh-release@v1
+      # ----------------------------------------
+      # Create GitHub Release & attach gem
+      # ----------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: "v${{ env.VERSION }}"
-          name: "Ruby SDK Release ${{ env.VERSION }}"
+          name: "Ruby SDK Release v${{ env.VERSION }}"
+          files: "*.gem"
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
