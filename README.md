@@ -27,7 +27,6 @@ and run `bundle install`.
      imageUploadURL: '/upload_image'
    });
   ```
-
 3. In your controller define an action to store the uploaded file.
 
    ```ruby
