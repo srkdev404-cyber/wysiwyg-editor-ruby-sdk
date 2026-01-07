@@ -1,4 +1,4 @@
-name: Sync Version (Ruby SDK)
+name: Sync Version – Ruby SDK (Child-B)
 
 on:
   repository_dispatch:
@@ -14,58 +14,69 @@ jobs:
     environment: PAT
 
     steps:
-      # ----------------------------------------
+      # -------------------------------------------------
       # Checkout repository
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
-      # ----------------------------------------
+      # -------------------------------------------------
       # Load version & release notes
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Load payload
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "${{ github.event.client_payload.release_notes }}" > release_notes.txt
 
-      # ----------------------------------------
-      # Update Ruby SDK version constants
-      # ----------------------------------------
-      - name: Update version.rb and gemspec
+      # -------------------------------------------------
+      # Update version.rb (official Froala style)
+      # -------------------------------------------------
+      - name: Update version.rb
         run: |
           FILE="lib/froala-editor-sdk/version.rb"
-          IFS='.' read -r MAJOR MINOR TINY <<< "${{ env.VERSION }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
           sed -i "s/Major = .*/Major = ${MAJOR}/" $FILE
           sed -i "s/Minor = .*/Minor = ${MINOR}/" $FILE
-          sed -i "s/Tiny = .*/Tiny = ${TINY}/"   $FILE
+          sed -i "s/Tiny  = .*/Tiny  = ${PATCH}/" $FILE
 
+      # -------------------------------------------------
+      # Update gemspec version (CRITICAL FIX)
+      # -------------------------------------------------
+      - name: Update gemspec version
+        run: |
           GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
-          sed -i "s/gem.add_dependency 'froala-editor-sdk'.*/gem.add_dependency 'froala-editor-sdk', '${{ env.VERSION }}'/" $GEMSPEC
+          sed -i "s/spec.version *= *.*/spec.version = '${VERSION}'/" $GEMSPEC
 
-      # ----------------------------------------
-      # Create / update sync branch
-      # ----------------------------------------
+      # -------------------------------------------------
+      # Create release branch + commit
+      # -------------------------------------------------
       - name: Commit changes
         run: |
-          git checkout -B sync-${{ env.VERSION }}
+          git checkout -B release-v${VERSION}
+
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-          git add .
-          git commit -m "chore: sync Ruby SDK v${{ env.VERSION }} with official release notes" || true
-          git push origin sync-${{ env.VERSION }} --force
+          git add \
+            lib/froala-editor-sdk/version.rb \
+            wysiwyg-editor-ruby-sdk.gemspec \
+            release_notes.txt
 
-      # ----------------------------------------
+          git commit -m "chore: release v${VERSION} (Ruby SDK)"
+          git push origin release-v${VERSION} --force
+
+      # -------------------------------------------------
       # Create Pull Request
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.PAT }}
-          branch: sync-${{ env.VERSION }}
-          base: master
-          title: "Release v${{ env.VERSION }}"
-          body: "release: yes"
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh pr create \
+            --base master \
+            --head release-v${VERSION} \
+            --title "Release v${VERSION}" \
+            --body "release: yes"
