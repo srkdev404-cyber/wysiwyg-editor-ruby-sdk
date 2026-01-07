@@ -11,19 +11,33 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    environment: PAT
 
     steps:
-      - uses: actions/checkout@v4
+      # ----------------------------------------
+      # Checkout repository
+      # ----------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
-      - run: |
-          VERSION="${{ github.event.client_payload.version }}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      # ----------------------------------------
+      # Load version & release notes
+      # ----------------------------------------
+      - name: Load payload
+        run: |
+          echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
+          echo "${{ github.event.client_payload.release_notes }}" > release_notes.txt
 
-      - run: |
+      # ----------------------------------------
+      # Update Ruby SDK version constants
+      # ----------------------------------------
+      - name: Update version.rb and gemspec
+        run: |
           FILE="lib/froala-editor-sdk/version.rb"
           IFS='.' read -r MAJOR MINOR TINY <<< "${{ env.VERSION }}"
+
           sed -i "s/Major = .*/Major = ${MAJOR}/" $FILE
           sed -i "s/Minor = .*/Minor = ${MINOR}/" $FILE
           sed -i "s/Tiny = .*/Tiny = ${TINY}/"   $FILE
@@ -31,19 +45,27 @@ jobs:
           GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
           sed -i "s/gem.add_dependency 'froala-editor-sdk'.*/gem.add_dependency 'froala-editor-sdk', '${{ env.VERSION }}'/" $GEMSPEC
 
-      - run: |
+      # ----------------------------------------
+      # Create / update sync branch
+      # ----------------------------------------
+      - name: Commit changes
+        run: |
           git checkout -B sync-${{ env.VERSION }}
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
           git add .
-          git commit -m "chore: sync Ruby SDK version ${{ env.VERSION }}" || true
+          git commit -m "chore: sync Ruby SDK v${{ env.VERSION }} with official release notes" || true
+          git push origin sync-${{ env.VERSION }} --force
 
-      - run: git push origin sync-${{ env.VERSION }} --force
-
-      - uses: peter-evans/create-pull-request@v6
+      # ----------------------------------------
+      # Create Pull Request
+      # ----------------------------------------
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.PAT }}
           branch: sync-${{ env.VERSION }}
           base: master
-          title: "Sync Version ${{ env.VERSION }}"
-          body: "Automated version sync."
+          title: "Release v${{ env.VERSION }}"
+          body: "release: yes"
