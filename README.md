@@ -10,7 +10,6 @@ Add this to your Gemfile:
 ```ruby
 gem "froala-editor-sdk"
 ```
-
 and run `bundle install`.
 
 ## Quick start - Image Upload
