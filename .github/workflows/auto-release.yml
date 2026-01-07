@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   release:
@@ -47,17 +46,17 @@ jobs:
           token: ${{ secrets.PAT }}
 
       # ----------------------------------------
-      # Read version.rb (Ruby-evaluated)
+      # Read version from Ruby constants
       # ----------------------------------------
-      - name: Read version from Ruby constants
+      - name: Read version from Ruby
         run: |
           VERSION=$(ruby -e "
             require './lib/froala-editor-sdk/version'
             puts FroalaEditorSDK::Version::String
           ")
 
-          echo \"VERSION=$VERSION\" >> $GITHUB_ENV
-          echo \"Detected version: $VERSION\"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Detected version: $VERSION"
 
       # ----------------------------------------
       # Setup Ruby
@@ -68,20 +67,20 @@ jobs:
           ruby-version: '3.1'
 
       # ----------------------------------------
-      # Build gem ONLY (no push)
+      # Build gem
       # ----------------------------------------
       - name: Build gem
         run: gem build wysiwyg-editor-ruby-sdk.gemspec
 
       # ----------------------------------------
-      # Create GitHub Release (NO manual tagging)
+      # Create GitHub Release (NO auto notes)
       # ----------------------------------------
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ env.VERSION }}"
           name: "Ruby SDK Release v${{ env.VERSION }}"
+          body_path: release_notes.txt
           files: "*.gem"
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
