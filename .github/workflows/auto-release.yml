@@ -1,4 +1,4 @@
-name: Auto Release – Ruby SDK
+name: Auto Release – Ruby SDK (Child-B)
 
 on:
   pull_request:
@@ -16,9 +16,9 @@ jobs:
     environment: PAT
 
     steps:
-      # ----------------------------------------
+      # -------------------------------------------------
       # Require "release: yes"
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Check release intent
         id: check
         uses: actions/github-script@v6
@@ -33,48 +33,61 @@ jobs:
               /release:\s*yes/i.test(text) ? 'true' : 'false'
             );
 
-      - name: Stop if not release
+      - name: Stop if not a release
         if: steps.check.outputs.release == 'false'
         run: exit 0
 
-      # ----------------------------------------
+      # -------------------------------------------------
       # Checkout merged code
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
-      # ----------------------------------------
-      # Read version from Ruby constants
-      # ----------------------------------------
-      - name: Read version from Ruby
+      # -------------------------------------------------
+      # Read version (authoritative source)
+      # -------------------------------------------------
+      - name: Read version from gemspec
         run: |
           VERSION=$(ruby -e "
-            require './lib/froala-editor-sdk/version'
-            puts FroalaEditorSDK::Version::String
+            spec = Gem::Specification.load('wysiwyg-editor-ruby-sdk.gemspec')
+            puts spec.version
           ")
-
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Detected version: $VERSION"
+          echo "Releasing version: $VERSION"
 
-      # ----------------------------------------
+      # -------------------------------------------------
       # Setup Ruby
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1'
 
-      # ----------------------------------------
-      # Build gem
-      # ----------------------------------------
+      # -------------------------------------------------
+      # Build gem (matches Froala docs)
+      # -------------------------------------------------
       - name: Build gem
-        run: gem build wysiwyg-editor-ruby-sdk.gemspec
+        run: |
+          gem build wysiwyg-editor-ruby-sdk.gemspec
 
-      # ----------------------------------------
+      # -------------------------------------------------
+      # Push gem to RubyGems (OFFICIAL STEP)
+      # -------------------------------------------------
+      - name: Publish to RubyGems
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          mkdir -p ~/.gem
+          echo ":rubygems_api_key: $RUBYGEMS_API_KEY" > ~/.gem/credentials
+          chmod 600 ~/.gem/credentials
+
+          gem push froala-editor-sdk-${VERSION}.gem
+
+      # -------------------------------------------------
       # Create GitHub Release (NO auto notes)
-      # ----------------------------------------
+      # -------------------------------------------------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
