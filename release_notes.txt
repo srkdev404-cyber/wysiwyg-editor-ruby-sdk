@@ -1,2 +1,2 @@
-1. Hello Celestial!
-2. created a new file in css folder as raj.txt
+1. **Hello celestial!
+2. Updated dispatch event to child - E**
