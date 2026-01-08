@@ -1,2 +1,2 @@
-**Deleted hello,txt from js**
-Testing child-D
+Hello Celestial!
+Update hello.txt in JSS for testing
