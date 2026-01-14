@@ -11,7 +11,6 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    environment: PAT
 
     steps:
       # -------------------------------------------------
@@ -21,14 +20,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
+          fetch-depth: 0
 
       # -------------------------------------------------
-      # Load version & release notes
+      # Load & validate version
       # -------------------------------------------------
-      - name: Load payload
+      - name: Load & validate version
         run: |
-          echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
-          echo "${{ github.event.client_payload.release_notes }}" > release_notes.txt
+          VERSION="${{ github.event.client_payload.version }}"
+          VERSION="${VERSION//,/\.}"
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       # -------------------------------------------------
       # Update version.rb (official Froala style)
@@ -36,47 +43,58 @@ jobs:
       - name: Update version.rb
         run: |
           FILE="lib/froala-editor-sdk/version.rb"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-          sed -i "s/Major = .*/Major = ${MAJOR}/" $FILE
-          sed -i "s/Minor = .*/Minor = ${MINOR}/" $FILE
-          sed -i "s/Tiny  = .*/Tiny  = ${PATCH}/" $FILE
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3 | cut -d- -f1)
+
+          sed -i "s/Major = .*/Major = ${MAJOR}/" "$FILE"
+          sed -i "s/Minor = .*/Minor = ${MINOR}/" "$FILE"
+          sed -i "s/Tiny  = .*/Tiny  = ${PATCH}/" "$FILE"
 
       # -------------------------------------------------
-      # Update gemspec version (CRITICAL FIX)
+      # Update gemspec version (supports prerelease)
       # -------------------------------------------------
       - name: Update gemspec version
         run: |
           GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
-          sed -i "s/spec.version *= *.*/spec.version = '${VERSION}'/" $GEMSPEC
+          sed -i -E \
+            "s/spec.version\s*=.*/spec.version = '${VERSION}'/" \
+            "$GEMSPEC"
 
       # -------------------------------------------------
       # Create release branch + commit
       # -------------------------------------------------
-      - name: Commit changes
+      - name: Commit & push changes
         run: |
-          git checkout -B release-v${VERSION}
+          BRANCH="release-v${VERSION}"
+          git checkout -B "$BRANCH"
 
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config user.name "srkdev404-cyber"
+          git config user.email "srkdev404@gmail.com"
 
           git add \
             lib/froala-editor-sdk/version.rb \
-            wysiwyg-editor-ruby-sdk.gemspec \
-            release_notes.txt
+            wysiwyg-editor-ruby-sdk.gemspec
 
-          git commit -m "chore: release v${VERSION} (Ruby SDK)"
-          git push origin release-v${VERSION} --force
+          git commit -m "chore: release v${VERSION} (Ruby SDK)" \
+            || echo "Nothing to commit"
+
+          git push origin "$BRANCH"
 
       # -------------------------------------------------
-      # Create Pull Request
+      # Create Pull Request (release notes live in PR body)
       # -------------------------------------------------
       - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.PAT }}
+          RELEASE_NOTES: ${{ github.event.client_payload.release_notes }}
         run: |
+          PR_BODY=$(printf "release: yes\n\n## Release Notes (from primary repo)\n\n%s\n" "$RELEASE_NOTES")
+
           gh pr create \
             --base master \
-            --head release-v${VERSION} \
+            --head "release-v${VERSION}" \
             --title "Release v${VERSION}" \
-            --body "release: yes"
+            --body "$PR_BODY" \
+            || echo "Pull request already exists"
