@@ -13,7 +13,6 @@ jobs:
   release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    environment: PAT
 
     steps:
       # -------------------------------------------------
@@ -25,9 +24,10 @@ jobs:
         with:
           github-token: ${{ secrets.PAT }}
           script: |
-            const text =
-              (context.payload.pull_request.title || '') + ' ' +
-              (context.payload.pull_request.body || '');
+            const title = context.payload.pull_request.title || '';
+            const body  = context.payload.pull_request.body || '';
+            const text  = `${title} ${body}`;
+
             core.setOutput(
               'release',
               /release:\s*yes/i.test(text) ? 'true' : 'false'
@@ -44,16 +44,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
+          fetch-depth: 0
 
       # -------------------------------------------------
-      # Read version (authoritative source)
+      # Read & validate version from gemspec
       # -------------------------------------------------
-      - name: Read version from gemspec
+      - name: Read & validate version
         run: |
           VERSION=$(ruby -e "
             spec = Gem::Specification.load('wysiwyg-editor-ruby-sdk.gemspec')
+            abort('Version not found') unless spec
             puts spec.version
           ")
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            exit 1
+          fi
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Releasing version: $VERSION"
 
@@ -66,34 +74,20 @@ jobs:
           ruby-version: '3.1'
 
       # -------------------------------------------------
-      # Build gem (matches Froala docs)
+      # Build gem (NO publish)
       # -------------------------------------------------
       - name: Build gem
         run: |
           gem build wysiwyg-editor-ruby-sdk.gemspec
 
       # -------------------------------------------------
-      # Push gem to RubyGems (OFFICIAL STEP)
-      # -------------------------------------------------
-      - name: Publish to RubyGems
-        env:
-          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
-        run: |
-          mkdir -p ~/.gem
-          echo ":rubygems_api_key: $RUBYGEMS_API_KEY" > ~/.gem/credentials
-          chmod 600 ~/.gem/credentials
-
-          gem push froala-editor-sdk-${VERSION}.gem
-
-      # -------------------------------------------------
-      # Create GitHub Release (NO auto notes)
+      # Create GitHub Release (PR body → release notes)
       # -------------------------------------------------
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "v${{ env.VERSION }}"
-          name: "Ruby SDK Release v${{ env.VERSION }}"
-          body_path: release_notes.txt
-          files: "*.gem"
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh release create "v${VERSION}" \
+            --title "Ruby SDK Release v${VERSION}" \
+            --notes "${{ github.event.pull_request.body }}" \
+            *.gem
