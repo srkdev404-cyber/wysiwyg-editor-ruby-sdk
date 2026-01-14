@@ -83,9 +83,13 @@ jobs:
       # --------------------------------------------
       # Create GitHub Release (PR body → release body)
       # --------------------------------------------
+
       - name: Create GitHub Release
         run: |
-          export GH_TOKEN="${{ secrets.PAT }}"
+          # Sanitize PAT (remove newlines / spaces)
+          GH_TOKEN_CLEAN=$(printf "%s" "${{ secrets.PAT }}" | tr -d '\n\r ')
+
+          export GH_TOKEN="$GH_TOKEN_CLEAN"
 
           gh release create "v${VERSION}" \
             --title "Ruby SDK Release v${VERSION}" \
