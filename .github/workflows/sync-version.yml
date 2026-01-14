@@ -13,33 +13,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------------------------------
+      # --------------------------------------------
       # Checkout repository
-      # -------------------------------------------------
+      # --------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
           fetch-depth: 0
 
-      # -------------------------------------------------
+      # --------------------------------------------
       # Load & validate version
-      # -------------------------------------------------
+      # --------------------------------------------
       - name: Load & validate version
         run: |
           VERSION="${{ github.event.client_payload.version }}"
           VERSION="${VERSION//,/\.}"
 
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version format: $VERSION"
+            echo "Invalid version: $VERSION"
             exit 1
           fi
 
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      # -------------------------------------------------
-      # Update version.rb (official Froala style)
-      # -------------------------------------------------
+      # --------------------------------------------
+      # Prepare release branch
+      # --------------------------------------------
+      - name: Prepare release branch
+        run: |
+          BRANCH="release-v${VERSION}"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+          git fetch origin
+
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            git checkout "$BRANCH"
+            git pull origin "$BRANCH"
+          else
+            git checkout -b "$BRANCH"
+          fi
+
+      # --------------------------------------------
+      # Update version.rb (Ruby SDK style)
+      # --------------------------------------------
       - name: Update version.rb
         run: |
           FILE="lib/froala-editor-sdk/version.rb"
@@ -52,24 +69,20 @@ jobs:
           sed -i "s/Minor = .*/Minor = ${MINOR}/" "$FILE"
           sed -i "s/Tiny  = .*/Tiny  = ${PATCH}/" "$FILE"
 
-      # -------------------------------------------------
-      # Update gemspec version (supports prerelease)
-      # -------------------------------------------------
+      # --------------------------------------------
+      # Update gemspec version
+      # --------------------------------------------
       - name: Update gemspec version
         run: |
-          GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
           sed -i -E \
             "s/spec.version\s*=.*/spec.version = '${VERSION}'/" \
-            "$GEMSPEC"
+            wysiwyg-editor-ruby-sdk.gemspec
 
-      # -------------------------------------------------
-      # Create release branch + commit
-      # -------------------------------------------------
-      - name: Commit & push changes
+      # --------------------------------------------
+      # Commit & push
+      # --------------------------------------------
+      - name: Commit & push
         run: |
-          BRANCH="release-v${VERSION}"
-          git checkout -B "$BRANCH"
-
           git config user.name "srkdev404-cyber"
           git config user.email "srkdev404@gmail.com"
 
@@ -77,14 +90,12 @@ jobs:
             lib/froala-editor-sdk/version.rb \
             wysiwyg-editor-ruby-sdk.gemspec
 
-          git commit -m "chore: release v${VERSION} (Ruby SDK)" \
-            || echo "Nothing to commit"
-
+          git commit -m "chore: release v${VERSION} (Ruby SDK)" || echo "Nothing to commit"
           git push origin "$BRANCH"
 
-      # -------------------------------------------------
-      # Create Pull Request (release notes live in PR body)
-      # -------------------------------------------------
+      # --------------------------------------------
+      # Create Pull Request (YAML-safe, notes in PR)
+      # --------------------------------------------
       - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.PAT }}
@@ -94,7 +105,7 @@ jobs:
 
           gh pr create \
             --base master \
-            --head "release-v${VERSION}" \
+            --head "$BRANCH" \
             --title "Release v${VERSION}" \
             --body "$PR_BODY" \
             || echo "Pull request already exists"
