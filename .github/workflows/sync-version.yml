@@ -26,31 +26,45 @@ jobs:
       # Load & validate version
       # --------------------------------------------
       - name: Load & validate version
+        shell: bash
         run: |
+          set -e
+
           VERSION="${{ github.event.client_payload.version }}"
           VERSION="${VERSION//,/\.}"
 
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version: $VERSION"
+          if [[ -z "$VERSION" ]]; then
+            echo "❌ Version is missing in repository_dispatch payload"
             exit 1
           fi
 
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "✅ Version validated: $VERSION"
 
       # --------------------------------------------
       # Prepare release branch
       # --------------------------------------------
       - name: Prepare release branch
+        shell: bash
         run: |
+          set -e
+
           BRANCH="release-v${VERSION}"
-          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
 
           git fetch origin
 
           if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            echo "🔁 Using existing branch: $BRANCH"
             git checkout "$BRANCH"
             git pull origin "$BRANCH"
           else
+            echo "🌱 Creating new branch: $BRANCH"
             git checkout -b "$BRANCH"
           fi
 
@@ -58,8 +72,16 @@ jobs:
       # Update version.rb (Ruby SDK style)
       # --------------------------------------------
       - name: Update version.rb
+        shell: bash
         run: |
+          set -e
+
           FILE="lib/froala-editor-sdk/version.rb"
+
+          if [[ ! -f "$FILE" ]]; then
+            echo "❌ version.rb not found at $FILE"
+            exit 1
+          fi
 
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MINOR=$(echo "$VERSION" | cut -d. -f2)
@@ -69,20 +91,37 @@ jobs:
           sed -i "s/Minor = .*/Minor = ${MINOR}/" "$FILE"
           sed -i "s/Tiny  = .*/Tiny  = ${PATCH}/" "$FILE"
 
+          echo "✅ Updated version.rb → ${MAJOR}.${MINOR}.${PATCH}"
+
       # --------------------------------------------
       # Update gemspec version
       # --------------------------------------------
       - name: Update gemspec version
+        shell: bash
         run: |
+          set -e
+
+          GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
+
+          if [[ ! -f "$GEMSPEC" ]]; then
+            echo "❌ Gemspec not found: $GEMSPEC"
+            exit 1
+          fi
+
           sed -i -E \
             "s/spec.version\s*=.*/spec.version = '${VERSION}'/" \
-            wysiwyg-editor-ruby-sdk.gemspec
+            "$GEMSPEC"
+
+          echo "✅ Updated gemspec version to $VERSION"
 
       # --------------------------------------------
-      # Commit & push
+      # Commit & push changes
       # --------------------------------------------
       - name: Commit & push
+        shell: bash
         run: |
+          set -e
+
           git config user.name "srkdev404-cyber"
           git config user.email "srkdev404@gmail.com"
 
@@ -90,22 +129,35 @@ jobs:
             lib/froala-editor-sdk/version.rb \
             wysiwyg-editor-ruby-sdk.gemspec
 
-          git commit -m "chore: release v${VERSION} (Ruby SDK)" || echo "Nothing to commit"
-          git push origin "$BRANCH"
+          if git diff --cached --quiet; then
+            echo "ℹ️ No changes to commit"
+          else
+            git commit -m "chore: release v${VERSION} (Ruby SDK)"
+            git push origin "$BRANCH"
+            echo "🚀 Changes pushed to $BRANCH"
+          fi
 
       # --------------------------------------------
-      # Create Pull Request (YAML-safe, notes in PR)
+      # Create Pull Request (safe & idempotent)
       # --------------------------------------------
       - name: Create Pull Request
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.PAT }}
           RELEASE_NOTES: ${{ github.event.client_payload.release_notes }}
         run: |
-          PR_BODY=$(printf "release: yes\n\n## Release Notes (from primary repo)\n\n%s\n" "$RELEASE_NOTES")
+          set -e
 
-          gh pr create \
-            --base master \
-            --head "$BRANCH" \
-            --title "Release v${VERSION}" \
-            --body "$PR_BODY" \
-            || echo "Pull request already exists"
+          PR_BODY=$(printf "release: yes\n\n## Release Notes (from primary repo)\n\n%s\n" "${RELEASE_NOTES:-No release notes provided}")
+
+          # Check if PR already exists
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            echo "✅ Pull request already exists for $BRANCH"
+          else
+            echo "🚀 Creating pull request for $BRANCH"
+            gh pr create \
+              --base master \
+              --head "$BRANCH" \
+              --title "Release v${VERSION} (Ruby SDK)" \
+              --body "$PR_BODY"
+          fi
