@@ -1,4 +1,4 @@
-name: Sync Version – Ruby SDK 
+name: Sync Version – Ruby SDK
 
 on:
   repository_dispatch:
@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
 
       # --------------------------------------------
-      # Load & validate version
+      # Load & validate incoming version
       # --------------------------------------------
       - name: Load & validate version
         shell: bash
@@ -44,29 +44,41 @@ jobs:
           fi
 
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "✅ Version validated: $VERSION"
-       # --------------------------------------------
+          echo "✅ Incoming version validated: $VERSION"
+
+      # --------------------------------------------
       # Compare current version vs incoming version
       # --------------------------------------------
       - name: Compare current version
+        shell: bash
         run: |
-          CURRENT_VERSION=$(grep -RhoE '[0-9]+\.[0-9]+\.[0-9]+' public admin | head -n 1)
+          set -e
 
-          if [ -z "$CURRENT_VERSION" ]; then
-            echo "❌ Unable to determine current version from repository"
+          FILE="lib/froala-editor-sdk/version.rb"
+
+          if [[ ! -f "$FILE" ]]; then
+            echo "❌ version.rb not found at $FILE"
             exit 1
           fi
+
+          CURRENT_VERSION=$(ruby -e "
+            load '$FILE'
+            puts [
+              FroalaEditorSDK::VERSION::Major,
+              FroalaEditorSDK::VERSION::Minor,
+              FroalaEditorSDK::VERSION::Tiny
+            ].join('.')
+          ")
 
           echo "📦 Current version : $CURRENT_VERSION"
           echo "🚀 Incoming version: $VERSION"
 
-          if [ "$CURRENT_VERSION" = "$VERSION" ]; then
-            echo "⛔ Versions are identical. Denying PR creation."
+          if [[ "$CURRENT_VERSION" == "${VERSION%%-*}" ]]; then
+            echo "⛔ Versions are identical. Skipping PR creation."
             exit 0
           fi
 
-          echo "✅ Version change detected. Proceeding."
-
+          echo "✅ Versions differ. Proceeding with sync."
 
       # --------------------------------------------
       # Prepare release branch
@@ -91,7 +103,7 @@ jobs:
           fi
 
       # --------------------------------------------
-      # Update version.rb (Ruby SDK style)
+      # Update version.rb
       # --------------------------------------------
       - name: Update version.rb
         shell: bash
@@ -99,11 +111,6 @@ jobs:
           set -e
 
           FILE="lib/froala-editor-sdk/version.rb"
-
-          if [[ ! -f "$FILE" ]]; then
-            echo "❌ version.rb not found at $FILE"
-            exit 1
-          fi
 
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MINOR=$(echo "$VERSION" | cut -d. -f2)
@@ -126,7 +133,7 @@ jobs:
           GEMSPEC="wysiwyg-editor-ruby-sdk.gemspec"
 
           if [[ ! -f "$GEMSPEC" ]]; then
-            echo "❌ Gemspec not found: $GEMSPEC"
+            echo "❌ Gemspec not found at $GEMSPEC"
             exit 1
           fi
 
@@ -134,7 +141,7 @@ jobs:
             "s/spec.version\s*=.*/spec.version = '${VERSION}'/" \
             "$GEMSPEC"
 
-          echo "✅ Updated gemspec version to $VERSION"
+          echo "✅ Updated gemspec version → $VERSION"
 
       # --------------------------------------------
       # Commit & push changes
@@ -144,8 +151,8 @@ jobs:
         run: |
           set -e
 
-          git config user.name "srkdev404-cyber"
-          git config user.email "srkdev404@gmail.com"
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
 
           git add \
             lib/froala-editor-sdk/version.rb \
@@ -160,26 +167,21 @@ jobs:
           fi
 
       # --------------------------------------------
-      # Create Pull Request (safe & idempotent)
+      # Create Pull Request (idempotent)
       # --------------------------------------------
       - name: Create Pull Request
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.PAT }}
-          RELEASE_NOTES: ${{ github.event.client_payload.release_notes }}
         run: |
           set -e
 
-          PR_BODY=$(printf "release: yes\n\n## Release Notes (from primary repo)\n\n%s\n" "${RELEASE_NOTES:-No release notes provided}")
-
-          # Check if PR already exists
           if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
             echo "✅ Pull request already exists for $BRANCH"
           else
-            echo "🚀 Creating pull request for $BRANCH"
             gh pr create \
               --base master \
               --head "$BRANCH" \
               --title "Release v${VERSION} (Ruby SDK)" \
-              --body "$PR_BODY"
+              --body "release: yes"
           fi
