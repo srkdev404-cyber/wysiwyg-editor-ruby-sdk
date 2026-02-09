@@ -64,9 +64,9 @@ jobs:
           CURRENT_VERSION=$(ruby -e "
             load '$FILE'
             puts [
-              FroalaEditorSDK::VERSION::Major,
-              FroalaEditorSDK::VERSION::Minor,
-              FroalaEditorSDK::VERSION::Tiny
+              FroalaEditorSDK::Version::Major,
+              FroalaEditorSDK::Version::Minor,
+              FroalaEditorSDK::Version::Tiny
             ].join('.')
           ")
 
