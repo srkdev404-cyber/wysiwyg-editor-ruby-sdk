@@ -74,13 +74,6 @@ jobs:
           ruby-version: '3.1'
 
       # --------------------------------------------
-      # Build gem
-      # --------------------------------------------
-      - name: Build gem
-        run: |
-          gem build wysiwyg-editor-ruby-sdk.gemspec
-
-      # --------------------------------------------
       # Create GitHub Release (PR body → release body)
       # --------------------------------------------
 
@@ -95,3 +88,10 @@ jobs:
             --title "Ruby SDK Release v${VERSION}" \
             --notes "${{ github.event.pull_request.body }}" \
             *.gem
+
+      # --------------------------------------------
+      # Build gem
+      # --------------------------------------------
+      - name: Build gem
+        run: |
+          gem build wysiwyg-editor-ruby-sdk.gemspec
