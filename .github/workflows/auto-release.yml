@@ -1,10 +1,9 @@
-name: Auto Release – Ruby SDK (Child-B)
+name: Auto Release – Ruby SDK
 
 on:
   pull_request_target:
     types: [closed]
-    branches:
-      - master
+    branches: [master]
 
 permissions:
   contents: write
@@ -16,7 +15,7 @@ jobs:
 
     steps:
       # --------------------------------------------
-      # Check release intent
+      # Verify release intent
       # --------------------------------------------
       - name: Check release intent
         id: check
@@ -24,74 +23,57 @@ jobs:
         with:
           github-token: ${{ secrets.PAT }}
           script: |
-            const title = context.payload.pull_request.title || '';
-            const body  = context.payload.pull_request.body || '';
-            const text  = `${title} ${body}`;
-
+            const text = `${context.payload.pull_request.title}
+                          ${context.payload.pull_request.body}`;
             core.setOutput(
               'release',
               /release:\s*yes/i.test(text) ? 'true' : 'false'
             );
 
-      - name: Stop if not a release PR
+      - name: Exit if not release PR
         if: steps.check.outputs.release == 'false'
         run: exit 0
 
       # --------------------------------------------
       # Checkout merged code
       # --------------------------------------------
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
           fetch-depth: 0
 
       # --------------------------------------------
-      # Read & validate version from gemspec
-      # --------------------------------------------
-      - name: Read & validate version
-        run: |
-          VERSION=$(ruby -e "
-            spec = Gem::Specification.load('wysiwyg-editor-ruby-sdk.gemspec')
-            abort('Version not found') unless spec
-            puts spec.version
-          ")
-
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid version format: $VERSION"
-            exit 1
-          fi
-
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Resolved version: $VERSION"
-
-      # --------------------------------------------
       # Setup Ruby
       # --------------------------------------------
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1'
 
       # --------------------------------------------
-      # Create GitHub Release (PR body → release body)
+      # Read version
       # --------------------------------------------
-
-      - name: Create GitHub Release
+      - name: Read version
         run: |
-          # Sanitize PAT (remove newlines / spaces)
-          GH_TOKEN_CLEAN=$(printf "%s" "${{ secrets.PAT }}" | tr -d '\n\r ')
+          VERSION=$(ruby -e "
+            spec = Gem::Specification.load('wysiwyg-editor-ruby-sdk.gemspec')
+            puts spec.version
+          ")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-          export GH_TOKEN="$GH_TOKEN_CLEAN"
-
+      # --------------------------------------------
+      # Create GitHub Release
+      # --------------------------------------------
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
           gh release create "v${VERSION}" \
-            --title "Ruby SDK Release v${VERSION}" \
+            --title "Ruby SDK v${VERSION}" \
             --notes "${{ github.event.pull_request.body }}" \
             *.gem
 
-      # --------------------------------------------
+     # --------------------------------------------
       # Build gem
       # --------------------------------------------
       - name: Build gem
-        run: |
-          gem build wysiwyg-editor-ruby-sdk.gemspec
+        run: gem build wysiwyg-editor-ruby-sdk.gemspec
