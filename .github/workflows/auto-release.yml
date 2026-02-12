@@ -60,14 +60,6 @@ jobs:
           ")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-
-      # --------------------------------------------
-      # Build gem
-      # --------------------------------------------
-      - name: Build gem
-        run: gem build wysiwyg-editor-ruby-sdk.gemspec
-
-
       # --------------------------------------------
       # Create GitHub Release
       # --------------------------------------------
@@ -81,3 +73,8 @@ jobs:
             *.gem
 
      
+      #-------------------------------------------
+      # Build gem
+      # --------------------------------------------
+      - name: Build gem
+        run: gem build wysiwyg-editor-ruby-sdk.gemspec
