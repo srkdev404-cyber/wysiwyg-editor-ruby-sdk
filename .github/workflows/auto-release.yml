@@ -1,80 +1,81 @@
-name: Auto Release – Ruby SDK
+name: Auto Release – PHP SDK
 
 on:
-  pull_request_target:
+  pull_request:
     types: [closed]
-    branches: [master]
+    branches:
+      - master
 
 permissions:
   contents: write
 
 jobs:
   release:
+    # Run only if PR is merged
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------------------------
-      # Verify release intent
-      # --------------------------------------------
-      - name: Check release intent
-        id: check
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.PAT }}
-          script: |
-            const text = `${context.payload.pull_request.title}
-                          ${context.payload.pull_request.body}`;
-            core.setOutput(
-              'release',
-              /release:\s*yes/i.test(text) ? 'true' : 'false'
-            );
 
-      - name: Exit if not release PR
-        if: steps.check.outputs.release == 'false'
-        run: exit 0
-
-      # --------------------------------------------
-      # Checkout merged code
-      # --------------------------------------------
-      - uses: actions/checkout@v4
+      # 🔹 Checkout repository (needed to read commit message)
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PAT }}
           fetch-depth: 0
 
-      # --------------------------------------------
-      # Setup Ruby
-      # --------------------------------------------
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.1'
+      # 🔍 Validate release intent from merge commit message
+      - name: Validate release intent from commit message
+        id: intent
+        run: |
+          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
 
-      # --------------------------------------------
-      # Read version
-      # --------------------------------------------
+          COMMIT_MSG=$(git log -1 --pretty=%B "$MERGE_SHA")
+
+          echo "Merge Commit Message:"
+          echo "$COMMIT_MSG"
+
+          if echo "$COMMIT_MSG" | grep -iq "^release:\s*yes$"; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          else
+            echo "release=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 🛑 Stop if not a release commit
+      - name: Skip if not release commit
+        if: steps.intent.outputs.release != 'true'
+        run: echo "ℹ️ Commit message does not contain 'release: yes'. Skipping release."
+
+      # 📦 Read version
       - name: Read version
+        if: steps.intent.outputs.release == 'true'
         run: |
-          VERSION=$(ruby -e "
-            spec = Gem::Specification.load('wysiwyg-editor-ruby-sdk.gemspec')
-            puts spec.version
-          ")
+          VERSION=$(jq -r '.version' composer.json)
+
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "❌ Failed to read version from composer.json"
+            exit 1
+          fi
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            exit 1
+          fi
+
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "✅ Releasing version $VERSION"
 
-      # --------------------------------------------
-      # Create GitHub Release
-      # --------------------------------------------
+      # 🚀 Create GitHub Release
       - name: Create GitHub Release
+        if: steps.intent.outputs.release == 'true'
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${VERSION}" \
-            --title "Ruby SDK v${VERSION}" \
-            --notes "${{ github.event.pull_request.body }}" \
-            *.gem
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "ℹ️ Release v${VERSION} already exists. Skipping."
+            exit 0
+          fi
 
-     
-      #-------------------------------------------
-      # Build gem
-      # --------------------------------------------
-      - name: Build gem
-        run: gem build wysiwyg-editor-ruby-sdk.gemspec
+          gh release create "v${VERSION}" \
+            --title "Release ${VERSION}" \
+            --notes "Automated release triggered by commit message" \
+            --latest
